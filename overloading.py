@@ -1,5 +1,6 @@
 """ This module demonstrates a decorator which adds support for traditional function/method overloading in Python. """
 
+import time
 from typing import Callable, Any
 import inspect
 
@@ -28,7 +29,6 @@ def overload(func: Callable, /, _function_cache={}) -> Callable:
     :param func: Function which should be overloadable.
     """
 
-    # TODO Kevin: Perhaps use func.__qualname__ to provide support for class methods.
     # TODO Kevin: Adds support for typing typehints, such as Union.
 
     targets = _function_cache.get(func.__qualname__, {})
@@ -56,36 +56,31 @@ def overload(func: Callable, /, _function_cache={}) -> Callable:
 
         params = tuple(type(arg) for arg in (args + tuple(kwargs.values())))
 
-        try:  # Attempt to find an exact match for the overload.
-            runfunc = _function_cache[func.__qualname__][params]
-        except KeyError:  # Inform the user when this fails.
-            # TODO Kevin: We could attempt to find a satisfactory function when an exact match is absent.
-            #   This might sound like a bad idea, but one has to consider the fact that Python supports optional
-            #   arguments. These mean that the provided arguments needn't match the signature.
+        try:  # Attempt to find and run an exact match for the overload.
+            return _function_cache[func.__qualname__][params](*args, **kwargs)
+        except KeyError:  # Search for an acceptable signature when a exact match can't be found.
+            #  This might sound like a bad idea, but one has to consider the fact that Python supports optional
+            #  arguments. These mean that the provided arguments needn't match the signature.
+
+            for signature, function in _function_cache[func.__qualname__].items():
+
+                # Signatures with fewer parameters than passed arguments are discarded.
+                if len(params) > len(signature):  # TODO Kevin: How will this work with **kwargs?
+                    continue  # Check the signature of the next function.
+
+                # Iterate over the signature and arguments simultaneously to check that their types are compatible
+                for param1, param2 in zip(signature, params):
+                    # Ignore the type of the argument, if the parameter accepts any type.
+                    # Otherwise; check that they match.
+                    if not (param1 is Any or param1 is param2):
+                        break  # Break and check the signature of the next function.
+                else:  # Will run when the loop finished without hitting break; meaning we found a compatible signature.
+                    return function(*args, **kwargs)
+
+            # Inform the user when this fails.
             raise KeyError(f"Cannot find a matching overload for function '{func.__qualname__}' with parameters {params}")
 
-        runfunc(*args, **kwargs)
-
     return wrapper
-
-
-# def overload(func: Callable, /, _function_cache={}) -> Callable:
-#
-#     key = (func, tuple(func.__annotations__.values()))
-#
-#     if key in _function_cache:
-#         raise KeyError(f"Identical overloaded signature for {func.__name__} already exists")
-#
-#     _function_cache[key] = func
-#
-#     def wrapper(*args, _function=func, **kwargs):
-#         key = (_function.__name__, args + tuple(type(arg) for arg in _function.__annotations__.values()))
-#         _function_cache[key](*args, **kwargs)
-#
-#     print(test := func.__annotations__)
-#     print(test2 := func.__name__)
-#
-#     return wrapper
 
 
 class Test:
@@ -97,11 +92,6 @@ class Test:
     @overload
     def test(self, b: str):
         print("Running method with string")
-
-
-temp = Test()
-temp.test(3)
-temp.test('3')
 
 
 @overload
@@ -119,6 +109,28 @@ def another_function(a: str):
     print('running another function with string')
 
 
+@overload
+def kwargtest(a: str):
+    pass
+
+
+@overload
+def kwargtest(a: str, b: int, c=3):
+    pass
+
+
 if __name__ == '__main__':
-    overload_test('hej')
-    another_function('')
+
+    # temp = Test()
+    # temp.test(3)
+    # temp.test('3')
+    #
+    # overload_test('hej')
+    # another_function('')
+
+    before = time.time()
+
+    for _ in range(1000000):
+        kwargtest('a')
+
+    print(f"Took: {time.time() - before}")
